@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claude Proxy Inspector</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2128;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --purple: #bc8cff;
+    --yellow: #e3b341;
+  }
+
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  /* ── Header ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 14px; font-weight: 600; color: var(--text); }
+  #ws-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+  }
+  #ws-status.connected { background: #1a3a1a; color: var(--green); }
+  #ws-status.disconnected { background: #3a1a1a; color: var(--red); }
+
+  header .spacer { flex: 1; }
+
+  #clear-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #clear-btn:hover { border-color: var(--text-muted); color: var(--text); }
+
+  /* ── Layout ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 280px;
+    min-width: 200px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  #sidebar-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+
+  #request-list {
+    flex: 1;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  #request-list::-webkit-scrollbar { width: 4px; }
+  #request-list::-webkit-scrollbar-track { background: transparent; }
+  #request-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .req-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .req-item:hover { background: var(--surface2); }
+  .req-item.active { background: #1a2332; border-left: 2px solid var(--accent); }
+
+  .req-item-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .method-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #1f4b8e;
+    color: #79c0ff;
+    flex-shrink: 0;
+  }
+
+  .req-path {
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .req-item-bottom {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 1px;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .status-badge.s2xx { background: #1a3a1a; color: var(--green); }
+  .status-badge.s4xx { background: #3a2a0a; color: var(--orange); }
+  .status-badge.s5xx { background: #3a1a1a; color: var(--red); }
+  .status-badge.pending { background: #1a1a2e; color: var(--text-muted); }
+
+  .req-time { font-size: 10px; color: var(--text-muted); }
+  .req-duration { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+
+  .empty-state {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  /* ── Detail Panel ── */
+  #detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .no-selection {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ── Panels ── */
+  .panels {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel:last-child { border-bottom: none; }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+
+  .panel-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+
+  .tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .tab {
+    padding: 7px 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.1s;
+    font-family: inherit;
+    background: transparent;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:hover { color: var(--text); }
+
+  .tab-content { display: none; flex: 1; overflow: auto; }
+  .tab-content.active { display: block; }
+  .tab-content::-webkit-scrollbar { width: 6px; }
+  .tab-content::-webkit-scrollbar-track { background: transparent; }
+  .tab-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .panel-body {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+  }
+  .panel-body::-webkit-scrollbar { width: 6px; }
+  .panel-body::-webkit-scrollbar-track { background: transparent; }
+  .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Headers Table ── */
+  .headers-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .headers-table td {
+    padding: 5px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    font-size: 12px;
+  }
+  .headers-table td:first-child {
+    color: var(--text-muted);
+    white-space: nowrap;
+    width: 200px;
+    font-weight: 500;
+  }
+  .headers-table td:last-child {
+    color: var(--text);
+    word-break: break-all;
+  }
+  .headers-table tr:last-child td { border-bottom: none; }
+
+  /* ── JSON Block ── */
+  .json-block {
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .json-block .key { color: #79c0ff; }
+  .json-block .string { color: #a5d6ff; }
+  .json-block .number { color: var(--green); }
+  .json-block .boolean { color: var(--orange); }
+  .json-block .null { color: var(--text-muted); }
+
+  /* ── SSE Events ── */
+  .sse-container {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .sse-event {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .sse-event-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: var(--surface2);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .sse-type-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .sse-type-badge.message_start { background: #1f3a5f; color: #79c0ff; }
+  .sse-type-badge.content_block_start { background: #1a3a1a; color: var(--green); }
+  .sse-type-badge.content_block_delta { background: #2a1a3a; color: var(--purple); }
+  .sse-type-badge.content_block_stop { background: #1a1a3a; color: #8b949e; }
+  .sse-type-badge.message_delta { background: #3a2a0a; color: var(--orange); }
+  .sse-type-badge.message_stop { background: #3a1a1a; color: var(--red); }
+  .sse-type-badge.ping { background: #1a2a1a; color: #3fb950; }
+  .sse-type-badge.error { background: #3a1a1a; color: var(--red); }
+  .sse-type-badge.unknown { background: #2a2a2a; color: var(--text-muted); }
+
+  .sse-toggle { margin-left: auto; color: var(--text-muted); font-size: 10px; }
+
+  .sse-event-body {
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    border-top: 1px solid var(--border);
+  }
+  .sse-event.collapsed .sse-event-body { display: none; }
+
+  /* Text accumulator */
+  .text-accumulator {
+    margin: 8px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .text-accumulator-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 8px 8px 0;
+    font-weight: 600;
+  }
+
+  /* ── Message Cards ── */
+  .msg-card {
+    margin: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--surface2);
+    cursor: pointer;
+    user-select: none;
+  }
+  .msg-role-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .msg-role-badge.msg-role-user    { background: #1f3a5f; color: #79c0ff; }
+  .msg-role-badge.msg-role-assistant { background: #1a3a1a; color: var(--green); }
+  .msg-role-badge.msg-role-system  { background: #3a2a0a; color: var(--orange); }
+  .msg-index   { font-size: 11px; color: var(--text-muted); }
+  .msg-summary { font-size: 10px; color: var(--text-muted); }
+  .msg-char-count { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+  .msg-toggle  { color: var(--text-muted); font-size: 10px; }
+  .msg-body {
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+  }
+  .msg-card.collapsed .msg-body { display: none; }
+  .msg-text {
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+    padding: 4px 2px;
+  }
+  .content-block {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .content-type-badge {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 8px;
+  }
+  .content-type-badge.content-type-text        { background: #1a1a2e; color: var(--text-muted); }
+  .content-type-badge.content-type-tool_use    { background: #1f3a5f; color: #79c0ff; }
+  .content-type-badge.content-type-tool_result { background: #1a3a1a; color: var(--green); }
+  .content-type-badge.content-type-tool_result.error { background: #3a1a1a; color: var(--red); }
+  .content-block-body .msg-text  { padding: 6px 8px; }
+  .content-block-body .json-block { padding: 6px 8px; font-size: 11px; }
+  .msg-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+  .streaming-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: var(--green);
+    border-radius: 50%;
+    margin-left: 6px;
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  .done-indicator {
+    font-size: 10px;
+    color: var(--green);
+    margin-left: auto;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Proxy Inspector</h1>
+  <span id="ws-status" class="disconnected">Connecting...</span>
+  <span class="spacer"></span>
+  <button id="clear-btn">Clear</button>
+</header>
+
+<div class="main">
+  <nav id="sidebar">
+    <div id="sidebar-header">Requests</div>
+    <ul id="request-list">
+      <li class="empty-state">
+        Waiting for requests...<br>
+        <span style="font-size:11px;">Run Claude Code with:<br>ANTHROPIC_BASE_URL=http://localhost:8080 claude</span>
+      </li>
+    </ul>
+  </nav>
+
+  <section id="detail">
+    <div class="no-selection" id="no-selection">← Select a request to inspect</div>
+
+    <div class="panels" id="panels" style="display:none;">
+      <!-- Request Panel -->
+      <div class="panel" id="req-panel">
+        <div class="panel-header">
+          <span class="panel-title">Request</span>
+          <span class="panel-meta" id="req-meta"></span>
+        </div>
+        <div class="tab-bar">
+          <button class="tab active" data-tab="req-messages">Messages</button>
+          <button class="tab" data-tab="req-headers">Headers</button>
+          <button class="tab" data-tab="req-body">Body</button>
+        </div>
+        <div class="tab-content active panel-body" id="req-messages">
+          <div id="req-messages-content"></div>
+        </div>
+        <div class="tab-content panel-body" id="req-headers">
+          <table class="headers-table" id="req-headers-table"></table>
+        </div>
+        <div class="tab-content panel-body" id="req-body">
+          <div class="json-block" id="req-body-content"></div>
+        </div>
+      </div>
+
+      <!-- Response Panel -->
+      <div class="panel" id="res-panel">
+        <div class="panel-header">
+          <span class="panel-title">Response</span>
+          <span id="res-streaming"><span class="streaming-indicator"></span></span>
+          <span class="panel-meta" id="res-meta"></span>
+          <span class="done-indicator" id="res-done" style="display:none;">✓ done</span>
+        </div>
+        <div class="tab-bar">
+          <button class="tab active" data-tab="res-events">Events</button>
+          <button class="tab" data-tab="res-headers">Headers</button>
+          <button class="tab" data-tab="res-raw">Raw</button>
+        </div>
+        <div class="tab-content active panel-body" id="res-events">
+          <div id="text-accumulator-label" class="text-accumulator-label" style="display:none;">Accumulated Text</div>
+          <div id="text-accumulator" class="text-accumulator" style="display:none;"></div>
+          <div class="sse-container" id="sse-container"></div>
+        </div>
+        <div class="tab-content panel-body" id="res-headers">
+          <table class="headers-table" id="res-headers-table"></table>
+        </div>
+        <div class="tab-content panel-body" id="res-raw">
+          <div class="json-block" id="res-raw-content"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

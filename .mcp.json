@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "claude-proxy-inspector": {
+      "command": "node",
+      "args": ["/Users/rio/study/claudeStudy/mcp.mjs"]
+    }
+  }
+}

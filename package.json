@@ -1,0 +1,15 @@
+{
+  "name": "claude-proxy",
+  "version": "1.0.0",
+  "description": "Claude Code API proxy with real-time web dashboard",
+  "main": "proxy.js",
+  "scripts": {
+    "start": "node proxy.js",
+    "mcp": "node mcp.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ws": "^8.18.0",
+    "zod": "^3.24.4"
+  }
+}
