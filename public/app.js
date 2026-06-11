@@ -1,6 +1,7 @@
 // State
 const requests = new Map(); // id -> { startEvent, responseHeadersEvent, chunks, status, duration, complete }
 let selectedId = null;
+let currentBodyText = ''; // raw body text of the selected request, for clipboard copy
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 
@@ -135,11 +136,19 @@ function renderRequest(req) {
   document.getElementById('req-headers-table').innerHTML = buildHeadersTable(req.headers);
 
   const bodyEl = document.getElementById('req-body-content');
+  let bodyText;
   if (req.body && typeof req.body === 'object') {
+    bodyText = JSON.stringify(req.body, null, 2);
     bodyEl.innerHTML = syntaxHighlight(req.body);
   } else {
-    bodyEl.textContent = req.body || '(empty)';
+    bodyText = req.body || '';
+    bodyEl.textContent = bodyText || '(empty)';
   }
+
+  const countEl = document.getElementById('req-body-count');
+  countEl.innerHTML = `Body: <strong>${bodyText.length.toLocaleString()}</strong> chars`;
+
+  currentBodyText = bodyText;
 }
 
 function renderMessagesTab(body) {
@@ -429,6 +438,32 @@ document.querySelectorAll('.tab-bar').forEach((bar) => {
     tab.classList.add('active');
     panel.querySelector(`#${targetId}`).classList.add('active');
   });
+});
+
+// ── Copy Body ─────────────────────────────────────────────────────────────────
+
+document.getElementById('req-body-copy').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  if (!currentBodyText) return;
+  try {
+    await navigator.clipboard.writeText(currentBodyText);
+  } catch {
+    // Fallback for non-secure contexts where navigator.clipboard is unavailable
+    const ta = document.createElement('textarea');
+    ta.value = currentBodyText;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  btn.textContent = 'Copied!';
+  btn.classList.add('copied');
+  setTimeout(() => {
+    btn.textContent = 'Copy';
+    btn.classList.remove('copied');
+  }, 1500);
 });
 
 // ── Clear ─────────────────────────────────────────────────────────────────────

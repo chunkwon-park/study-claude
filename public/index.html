@@ -285,6 +285,34 @@
   }
   .headers-table tr:last-child td { border-bottom: none; }
 
+  /* ── Body Char Count ── */
+  .body-char-count {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+  }
+  .body-char-count strong { color: var(--accent); font-weight: 600; }
+  #req-body-copy {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 3px 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  #req-body-copy:hover { border-color: var(--text-muted); color: var(--text); }
+  #req-body-copy.copied { border-color: var(--green); color: var(--green); }
+
   /* ── JSON Block ── */
   .json-block {
     padding: 12px 14px;
@@ -501,6 +529,10 @@
           <table class="headers-table" id="req-headers-table"></table>
         </div>
         <div class="tab-content panel-body" id="req-body">
+          <div class="body-char-count">
+            <span id="req-body-count"></span>
+            <button id="req-body-copy">Copy</button>
+          </div>
           <div class="json-block" id="req-body-content"></div>
         </div>
       </div>
